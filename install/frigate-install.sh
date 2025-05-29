@@ -17,8 +17,8 @@ msg_info "Installing Dependencies (Patience)"
 $STD apt-get install -y \
   git gpg ca-certificates automake build-essential xz-utils libtool ccache pkg-config \
   libgtk-3-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev libxvidcore-dev libx264-dev \
-  libjpeg-dev libpng-dev libtiff-dev gfortran openexr libatlas-base-dev libssl-dev libtbb-dev \
-  libopenexr-dev libgstreamer-plugins-base1.0-dev libgstreamer1.0-dev gcc gfortran \
+  libjpeg-dev libpng-dev libtiff-dev openexr libatlas-base-dev libssl-dev libtbb-dev \
+  libgstreamer-plugins-base1.0-dev libgstreamer1.0-dev gcc gfortran \
   libopenblas-dev liblapack-dev libusb-1.0-0-dev jq moreutils tclsh libhdf5-dev libopenexr-dev
 msg_ok "Installed Dependencies"
 
@@ -29,23 +29,48 @@ $STD pip install --upgrade pip
 msg_ok "Setup Python3"
 
 msg_info "Installing Node.js"
+DIR_KEYS="/etc/apt/keyrings"
+PATH_nodesource_KEY="${DIR_KEYS}/nodesource.gpg"
+DIR_apt_sources="/etc/apt/sources.list.d"
+PATH_nodesource_LIST="${DIR_apt_sources}/nodesource.list"
+
 mkdir -p /etc/apt/keyrings
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" >/etc/apt/sources.list.d/nodesource.list
+
+if [[ ! -f ${PATH_nodesource_KEY} ]]; then
+  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o ${PATH_nodesource_KEY}
+fi
+if [[ ! -f ${PATH_nodesource_LIST} ]]; then
+  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+    >${PATH_nodesource_LIST}
+fi
 $STD apt-get update
 $STD apt-get install -y nodejs
 msg_ok "Installed Node.js"
 
 msg_info "Installing go2rtc"
-mkdir -p /usr/local/go2rtc/bin
-cd /usr/local/go2rtc/bin
-curl -fsSL "https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_linux_amd64" -o go2rtc
-chmod +x go2rtc
-ln -sf /usr/local/go2rtc/bin/go2rtc /usr/local/bin/go2rtc
+GET_go2rtc_RELEASE=$(curl -s "https://api.github.com/repos/AlexxIT/go2rtc/releases/${go2rtc_version:-latest}" | jq -r '.tag_name')
+BIN_go2rtc_RELEASE=go2rtc-${GET_go2rtc_RELEASE}
+DIR_go2rtc="/usr/local/go2rtc/bin"
+PATH_go2rtc_RELEASE="${DIR_go2rtc}/${BIN_go2rtc_RELEASE}"
+LOCAL_go2rtc_LINK="/usr/local/bin/go2rtc"
+mkdir -p "${DIR_go2rtc}"
+
+if [[ -L "${LOCAL_go2rtc_LINK}" && -x "${LOCAL_go2rtc_LINK}" ]]; then
+  LOCAL_go2rtc_VER=$("${LOCAL_go2rtc_LINK}" --version | cut -f3 -d" ")
+elif [[ -f "${LOCAL_go2rtc_LINK}" ]]; then
+  rm -f "${LOCAL_go2rtc_LINK}"
+fi
+
+if [[ "v${LOCAL_go2rtc_VER:-NONE}" != "${GET_go2rtc_RELEASE}" ]]; then
+  wget -qO "${PATH_go2rtc_RELEASE}" "https://github.com/AlexxIT/go2rtc/releases/download/${GET_go2rtc_RELEASE}/go2rtc_linux_amd64"
+  chmod +x "${PATH_go2rtc_RELEASE}"
+  $STD ln -svf "${PATH_go2rtc_RELEASE}" "${LOCAL_go2rtc_LINK}"
+fi
 msg_ok "Installed go2rtc"
 
 msg_info "Setting Up Hardware Acceleration"
-$STD apt-get -y install {va-driver-all,ocl-icd-libopencl1,intel-opencl-icd,vainfo,intel-gpu-tools}
+$STD apt-get -y install \
+  va-driver-all ocl-icd-libopencl1 intel-opencl-icd vainfo intel-gpu-tools
 if [[ "$CTTYPE" == "0" ]]; then
   chgrp video /dev/dri
   chmod 755 /dev/dri
@@ -54,12 +79,16 @@ fi
 msg_ok "Set Up Hardware Acceleration"
 
 msg_info "Setup Frigate"
-RELEASE=$(curl -s https://api.github.com/repos/blakeblackshear/frigate/releases/latest | jq -r '.tag_name')
+GET_frigate_RELEASE=${frigate_version:-latest}
+RELEASE=$(curl -s "https://api.github.com/repos/blakeblackshear/frigate/releases/${GET_frigate_RELEASE}" | jq -r '.tag_name')
 mkdir -p /opt/frigate/models
-curl -fsSL https://github.com/blakeblackshear/frigate/archive/refs/tags/${RELEASE}.tar.gz -o frigate.tar.gz
+curl -fsSL "https://github.com/blakeblackshear/frigate/archive/refs/tags/${RELEASE}.tar.gz" -o frigate.tar.gz
+rm -rf /opt/frigate/web
+rm -rf /wheels/*.whl
+rm -rf /opt/frigate/docker
 tar -xzf frigate.tar.gz -C /opt/frigate --strip-components 1
 rm -rf frigate.tar.gz
-cd /opt/frigate
+cd /opt/frigate || exit
 $STD pip install -r /opt/frigate/docker/main/requirements.txt --break-system-packages
 $STD pip install -r /opt/frigate/docker/main/requirements-ov.txt --break-system-packages
 $STD pip3 wheel --wheel-dir=/wheels -r /opt/frigate/docker/main/requirements-wheels.txt
@@ -76,13 +105,16 @@ ldconfig
 $STD pip3 install -r /opt/frigate/docker/main/requirements-dev.txt
 $STD /opt/frigate/.devcontainer/initialize.sh
 $STD make version
-cd /opt/frigate/web
+cd /opt/frigate/web || exit
 $STD npm install
 $STD npm run build
 cp -r /opt/frigate/web/dist/* /opt/frigate/web/
-cp -r /opt/frigate/config/. /config
 sed -i '/^s6-svc -O \.$/s/^/#/' /opt/frigate/docker/main/rootfs/etc/s6-overlay/s6-rc.d/frigate/run
-cat <<EOF >/config/config.yml
+
+msg_info "Setup Frigate Config"
+if [[ ! -d "/config/" ]]; then
+  cp -r /opt/frigate/config/. /config
+  cat <<EOF >/config/config.yml
 mqtt:
   enabled: false
 cameras:
@@ -100,7 +132,9 @@ cameras:
       width: 1920
       fps: 5
 EOF
-ln -sf /config/config.yml /opt/frigate/config/config.yml
+  ln -sf /config/config.yml /opt/frigate/config/config.yml
+fi
+
 if [[ "$CTTYPE" == "0" ]]; then
   sed -i -e 's/^kvm:x:104:$/render:x:104:root,frigate/' -e 's/^render:x:105:root$/kvm:x:105:/' /etc/group
 else
@@ -109,7 +143,7 @@ fi
 echo "tmpfs   /tmp/cache      tmpfs   defaults        0       0" >>/etc/fstab
 msg_ok "Installed Frigate $RELEASE"
 
-read -p "Semantic Search requires a dedicated GPU and at least 16GB RAM. Would you like to install it? (y/n): " semantic_choice
+read -rp "Semantic Search requires a dedicated GPU and at least 16GB RAM. Would you like to install it? (y/n): " semantic_choice
 if [[ "$semantic_choice" == "y" ]]; then
   msg_info "Configuring Semantic Search & AI Models"
   mkdir -p /opt/frigate/models/semantic_search
@@ -118,35 +152,24 @@ if [[ "$semantic_choice" == "y" ]]; then
 else
   msg_ok "Skipped Semantic Search Setup"
 fi
+
 msg_info "Building and Installing libUSB without udev"
-wget -qO /tmp/libusb.zip https://github.com/libusb/libusb/archive/v1.0.26.zip
+GET_libusb_RELEASE="${libusb_version:-1.0.26}"
+
+curl -fsSL -o /tmp/libusb.zip "https://github.com/libusb/libusb/archive/v${GET_libusb_RELEASE}.zip"
 unzip -q /tmp/libusb.zip -d /tmp/
-cd /tmp/libusb-1.0.26
+cd "/tmp/libusb-${GET_libusb_RELEASE}" || exit 1
 ./bootstrap.sh
 ./configure --disable-udev --enable-shared
-make -j$(nproc --all)
+make -j "$(nproc --all)"
 make install
 ldconfig
-rm -rf /tmp/libusb.zip /tmp/libusb-1.0.26
+rm -rf /tmp/libusb.zip /tmp/"${GET_libusb_RELEASE}"
 msg_ok "Installed libUSB without udev"
 
 msg_info "Installing Coral Object Detection Model (Patience)"
-cd /opt/frigate
 export CCACHE_DIR=/root/.ccache
 export CCACHE_MAXSIZE=2G
-curl -L -o v1.0.26.zip https://github.com/libusb/libusb/archive/v1.0.26.zip
-unzip -q v1.0.26.zip
-rm v1.0.26.zip
-cd libusb-1.0.26
-$STD ./bootstrap.sh
-$STD ./configure --disable-udev --enable-shared
-$STD make -j $(nproc --all)
-cd /opt/frigate/libusb-1.0.26/libusb
-mkdir -p /usr/local/lib
-$STD /bin/bash ../libtool --mode=install /usr/bin/install -c libusb-1.0.la '/usr/local/lib'
-mkdir -p /usr/local/include/libusb-1.0
-$STD /usr/bin/install -c -m 644 libusb.h '/usr/local/include/libusb-1.0'
-ldconfig
 cd /
 wget -qO edgetpu_model.tflite https://github.com/google-coral/test_data/raw/release-frogfish/ssdlite_mobiledet_coco_qat_postprocess_edgetpu.tflite
 wget -qO cpu_model.tflite https://github.com/google-coral/test_data/raw/release-frogfish/ssdlite_mobiledet_coco_qat_postprocess.tflite
@@ -187,6 +210,7 @@ WantedBy=multi-user.target
 EOF
 systemctl enable -q --now create_directories
 sleep 3
+
 cat <<EOF >/etc/systemd/system/go2rtc.service
 [Unit]
 Description=go2rtc service
@@ -209,6 +233,7 @@ WantedBy=multi-user.target
 EOF
 systemctl enable -q --now go2rtc
 sleep 3
+
 cat <<EOF >/etc/systemd/system/frigate.service
 [Unit]
 Description=Frigate service
@@ -232,6 +257,7 @@ WantedBy=multi-user.target
 EOF
 systemctl enable -q --now frigate
 sleep 3
+
 cat <<EOF >/etc/systemd/system/nginx.service
 [Unit]
 Description=Nginx service
