@@ -1,9 +1,24 @@
 #!/usr/bin/env bash
-source <(curl -s https://git.community-scripts.org/community-scripts/ProxmoxVED/raw/branch/main/misc/build.func)
 # Copyright (c) 2021-2025 community-scripts ORG
 # Authors: MickLesk (CanbiZ)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://frigate.video/
+
+function get_resource_file_content() {
+  local GIT_base_BRANCH="${GIT_base_BRANCH:-main}"
+  local GIT_base_URL="${GIT_base_URL:-https://git.community-scripts.org/community-scripts/ProxmoxVED}"
+  local RES_FILE="$1"
+
+  if [[ -f "../${RES_FILE}" ]]; then
+    local RES_CONTENT="$(<"../${RES_FILE}")"
+  else
+    local RES_CONTENT="$(curl -fsSL "${GIT_base_URL}/raw/branch/${GIT_base_BRANCH}/${RES_FILE}")"
+  fi
+
+  echo "${RES_CONTENT}"
+}
+
+source <(get_resource_file_content "misc/build.func")
 
 # App Default Values
 APP="Frigate"

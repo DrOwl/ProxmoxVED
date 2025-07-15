@@ -5,12 +5,31 @@
 # License: MIT
 # https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
 
+function get_resource_file_content() {
+  # Function to get the content of a resource file
+  # such as one that is to be sourced or run
+  # it will check if there is a local file
+  # and if not get the file via a curl
+  local GIT_base_BRANCH="${GIT_base_BRANCH:-main}"
+  local GIT_base_URL="${GIT_base_URL:-https://git.community-scripts.org/community-scripts/ProxmoxVED}"
+  local RES_FILE="$1"
+  local RES_CONTENT
+
+  if [[ -f "../${RES_FILE}" ]]; then
+    RES_CONTENT="$(<"../${RES_FILE}")"
+  else
+    RES_CONTENT="$(curl -fsSL "${GIT_base_URL}/raw/branch/${GIT_base_BRANCH}/${RES_FILE}")"
+  fi
+
+  echo "${RES_CONTENT}"
+}
+
 if ! command -v curl >/dev/null 2>&1; then
   printf "\r\e[2K%b" '\033[93m Setup Source \033[m' >&2
   apt-get update >/dev/null 2>&1
   apt-get install -y curl >/dev/null 2>&1
 fi
-source <(curl -fsSL https://git.community-scripts.org/community-scripts/ProxmoxVED/raw/branch/main/misc/core.func)
+source <(get_resource_file_content "misc/core.func")
 load_functions
 
 # This function enables IPv6 if it's not disabled and sets verbose mode
@@ -31,7 +50,7 @@ catch_errors() {
 
 # This function handles errors
 error_handler() {
-  source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func)
+  source <(get_resource_file_content "misc/api.func")
   printf "\e[?25h"
   local exit_code="$?"
   local line_number="$1"
@@ -147,7 +166,7 @@ EOF
   $STD apt-get -o Dpkg::Options::="--force-confold" -y dist-upgrade
   rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED
   msg_ok "Updated Container OS"
-  source <(curl -fsSL https://git.community-scripts.org/community-scripts/ProxmoxVED/raw/branch/main/misc/tools.func)
+  source <(get_resource_file_content "misc/tools.func")
 }
 
 # This function modifies the message of the day (motd) and SSH settings
