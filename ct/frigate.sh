@@ -8,16 +8,18 @@ function get_resource_file_content() {
   local GIT_base_BRANCH="${GIT_base_BRANCH:-main}"
   local GIT_base_URL="${GIT_base_URL:-https://git.community-scripts.org/community-scripts/ProxmoxVED}"
   local RES_FILE="$1"
+  local RES_CONTENT
 
-  if [[ -f "../${RES_FILE}" ]]; then
-    local RES_CONTENT="$(<"../${RES_FILE}")"
+  if [[ -f "${RES_FILE}" ]]; then
+    RES_CONTENT="$(<"${RES_FILE}")"
   else
-    local RES_CONTENT="$(curl -fsSL "${GIT_base_URL}/raw/branch/${GIT_base_BRANCH}/${RES_FILE}")"
+    RES_CONTENT="$(curl -fsSL "${GIT_base_URL}/raw/branch/${GIT_base_BRANCH}/${RES_FILE}")"
   fi
 
   echo "${RES_CONTENT}"
 }
 
+# shellcheck source=misc/build.func
 source <(get_resource_file_content "misc/build.func")
 
 # App Default Values
