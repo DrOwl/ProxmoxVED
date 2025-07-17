@@ -7,16 +7,35 @@
 
 # This sets verbose mode if the global variable is set to "yes"
 # if [ "$VERBOSE" == "yes" ]; then set -x; fi
+function get_resource_file_content() {
+  local GIT_base_BRANCH="${GIT_base_BRANCH:-main}"
+  local GIT_base_URL="${GIT_base_URL:-https://git.community-scripts.org/community-scripts/ProxmoxVED}"
+  local RES_FILE="$1"
+  local RES_CONTENT
 
-if command -v curl >/dev/null 2>&1; then
-  source <(curl -fsSL https://git.community-scripts.org/community-scripts/ProxmoxVED/raw/branch/main/misc/core.func)
-  load_functions
-  #echo "(create-lxc.sh) Loaded core.func via curl"
-elif command -v wget >/dev/null 2>&1; then
-  source <(wget -qO- https://git.community-scripts.org/community-scripts/ProxmoxVED/raw/branch/main/misc/core.func)
-  load_functions
-  #echo "(create-lxc.sh) Loaded core.func via wget"
-fi
+  if [[ -f "${WORKING_DIR}/${RES_FILE}" ]]; then
+    RES_CONTENT="$(<"${WORKING_DIR}/${RES_FILE}")"
+  else
+    RES_CONTENT="$(curl -fsSL "${GIT_base_URL}/raw/branch/${GIT_base_BRANCH}/${RES_FILE}")"
+  fi
+
+  echo "${RES_CONTENT}"
+}
+
+
+# shellcheck source=misc/core.func
+source <(get_resource_file_content "misc/core.func")
+load_functions
+
+#if command -v curl >/dev/null 2>&1; then
+#  source <(curl -fsSL https://git.community-scripts.org/community-scripts/ProxmoxVED/raw/branch/main/misc/core.func)
+#  load_functions
+#  #echo "(create-lxc.sh) Loaded core.func via curl"
+#elif command -v wget >/dev/null 2>&1; then
+#  source <(wget -qO- https://git.community-scripts.org/community-scripts/ProxmoxVED/raw/branch/main/misc/core.func)
+#  load_functions
+#  #echo "(create-lxc.sh) Loaded core.func via wget"
+#fi
 
 # This sets error handling options and defines the error_handler function to handle errors
 set -Eeuo pipefail

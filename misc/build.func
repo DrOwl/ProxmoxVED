@@ -15,14 +15,15 @@ variables() {
   CT_TYPE=${var_unprivileged:-$CT_TYPE}
 }
 
+export WORKING_DIR="${PWD}"
 function get_resource_file_content() {
   local GIT_base_BRANCH="${GIT_base_BRANCH:-main}"
   local GIT_base_URL="${GIT_base_URL:-https://git.community-scripts.org/community-scripts/ProxmoxVED}"
   local RES_FILE="$1"
   local RES_CONTENT
 
-  if [[ -f "${RES_FILE}" ]]; then
-    RES_CONTENT="$(<"${RES_FILE}")"
+  if [[ -f "${WORKING_DIR}/${RES_FILE}" ]]; then
+    RES_CONTENT="$(<"${WORKING_DIR}/${RES_FILE}")"
   else
     RES_CONTENT="$(curl -fsSL "${GIT_base_URL}/raw/branch/${GIT_base_BRANCH}/${RES_FILE}")"
   fi
@@ -1196,10 +1197,11 @@ build_container() {
   TEMP_DIR=$(mktemp -d)
   pushd "$TEMP_DIR" >/dev/null
   if [ "$var_os" == "alpine" ]; then
-    export FUNCTIONS_FILE_PATH=<(get_resource_file_content "misc/alpine-install.func")
+    FUNCTIONS_FILE_PATH="$(get_resource_file_content "misc/alpine-install.func")"
   else
-    export FUNCTIONS_FILE_PATH=<(get_resource_file_content "misc/install.func")
+    FUNCTIONS_FILE_PATH="$(get_resource_file_content "misc/install.func")"
   fi
+  export FUNCTIONS_FILE_PATH
   export DIAGNOSTICS="$DIAGNOSTICS"
   export RANDOM_UUID="$RANDOM_UUID"
   export CACHER="$APT_CACHER"
@@ -1233,7 +1235,7 @@ build_container() {
     $PW
   "
   # This executes create_lxc.sh and creates the container and .conf file
-  bash -c <(get_resource_file_content "ct/create_lxc.sh") $?
+  bash -c "$(get_resource_file_content "misc/create_lxc.sh")" $?
 
   LXC_CONFIG="/etc/pve/lxc/${CTID}.conf"
 
@@ -1394,7 +1396,7 @@ EOF'
     }
   fi
   msg_ok "Customized LXC Container"
-  lxc-attach -n "$CTID" -- bash -c <(get_resource_file_content "install/$var_install.sh") $?
+  lxc-attach -n "$CTID" -- bash -c "$(get_resource_file_content "install/$var_install.sh")" $?
 }
 
 # This function sets the description of the container.
