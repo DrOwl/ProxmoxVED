@@ -48,24 +48,67 @@ $STD apt-get install -y nodejs
 msg_ok "Installed Node.js"
 
 msg_info "Installing go2rtc"
-GET_go2rtc_RELEASE=$(curl -s "https://api.github.com/repos/AlexxIT/go2rtc/releases/${go2rtc_version:-latest}" | jq -r '.tag_name')
-BIN_go2rtc_RELEASE=go2rtc-${GET_go2rtc_RELEASE}
-DIR_go2rtc="/usr/local/go2rtc/bin"
-PATH_go2rtc_RELEASE="${DIR_go2rtc}/${BIN_go2rtc_RELEASE}"
-LOCAL_go2rtc_LINK="/usr/local/bin/go2rtc"
-mkdir -p "${DIR_go2rtc}"
+# shellcheck disable=SC2120
+install_frigate_go2rtc () {
+  # Function to "install" go2rtc as used by Frigate Docker
+  # It Downloads the package from GitHub
+  # Then links it to the location required by Frigare
+  # will get "latest" release
+  # or a "taged" version if supplied with one
+  local release=${1:-latest}
+  local asset_name="go2rtc_linux_amd64"
+  local github_api_base="https://api.github.com/repos/AlexxIT/go2rtc"
+  local release_url
+  local local_release
+  local git_release_tag
+  local go2rtc_dir="/home/drowl/temp/go2rtc-install/usr/local/go2rtc/bin"
+  local go2rtc_link="/home/drowl/temp/go2rtc-install/usr/local/go2rtc/bin/go2rtc"
 
-if [[ -L "${LOCAL_go2rtc_LINK}" && -x "${LOCAL_go2rtc_LINK}" ]]; then
-  LOCAL_go2rtc_VER=$("${LOCAL_go2rtc_LINK}" --version | cut -f3 -d" ")
-elif [[ -f "${LOCAL_go2rtc_LINK}" ]]; then
-  rm -f "${LOCAL_go2rtc_LINK}"
-fi
+  if [[ "${release}" == "latest" ]] ; then
+    release_url="${github_api_base}/releases/latest"
+  else
+    release_url="${github_api_base}/releases/tags/${release}"
+  fi
 
-if [[ "v${LOCAL_go2rtc_VER:-NONE}" != "${GET_go2rtc_RELEASE}" ]]; then
-  wget -qO "${PATH_go2rtc_RELEASE}" "https://github.com/AlexxIT/go2rtc/releases/download/${GET_go2rtc_RELEASE}/go2rtc_linux_amd64"
-  chmod +x "${PATH_go2rtc_RELEASE}"
-  $STD ln -svf "${PATH_go2rtc_RELEASE}" "${LOCAL_go2rtc_LINK}"
-fi
+  if ! release_data=$(curl -fsSL "${release_url}"); then
+    msg_error "Error: Failed to fetch go2rtc release data from GitHub." >&2
+    return 1
+  fi
+
+  git_release_tag=$(jq -r '.tag_name' <<<"${release_data}")
+
+  if [[ "${git_release_tag}" == "null" ]] ; then
+    msg_error "Error: Could not parse go2rtc release tag" >&2
+    return 1
+  fi
+
+  mkdir -p "${go2rtc_dir}"
+
+  if [[ -L "${go2rtc_link}" && -x "${go2rtc_link}" ]]; then
+    local_release=$("${go2rtc_link}" --version | awk '/go2rtc version/ {print $3}')
+  elif [[ -f "${go2rtc_link}" ]]; then
+    rm -f "${go2rtc_link}"
+  fi
+
+  if [[ "v${local_release}" != "${git_release_tag}" ]]; then
+    msg_info "Downloading go2rtc release ${git_release_tag}"
+    local release_file="${go2rtc_dir}/go2rtc-${git_release_tag}"
+
+    download_url=$(jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .browser_download_url'  <<<"${release_data}")
+    if [[ "${download_url}" == "null" ]] ; then
+       msg_error "Error: Could not parse go2rtc download_url" >&2
+       return 1
+    fi
+
+    wget -qO "${release_file}" "${download_url}"
+    chmod +x "${release_file}"
+    $STD ln -svf "${release_file}" "${go2rtc_link}"
+  else
+    msg_info "Using existing go2rtc release ${git_release_tag}"
+  fi
+}
+install_frigate_go2rtc
+
 msg_ok "Installed go2rtc"
 
 msg_info "Setting Up Hardware Acceleration"
@@ -111,6 +154,9 @@ $STD npm install
 $STD npm run build
 cp -r /opt/frigate/web/dist/* /opt/frigate/web/
 sed -i '/^s6-svc -O \.$/s/^/#/' /opt/frigate/docker/main/rootfs/etc/s6-overlay/s6-rc.d/frigate/run
+
+awk '/^ENV/ {if  (NF==2) print $2; else if (NF==3) print $2"="$3}' docker/main/Dockerfile > /etc/default/docker-environment
+source /etc/default/docker-environment
 
 msg_info "Setup Frigate Config"
 if [[ ! -d "/config/" ]]; then
